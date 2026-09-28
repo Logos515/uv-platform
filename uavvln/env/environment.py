@@ -3,10 +3,12 @@ import numpy as np
 from uavvln.core.action import AgentAction
 from uavvln.core.episode import EpisodeSpec
 from uavvln.core.observation import CameraSpec, Observation
+from uavvln.core.observation_spec import ObservationSpec
 from uavvln.core.state import PrivilegedState, UAVState
 from .dynamics.base import DynamicsBackend
 from .geometry.base import GeometryBackend
 from .renderer.base import RendererBackend
+from .sensors import SensorSuite
 
 @dataclass(frozen=True)
 class StepResult:
@@ -27,25 +29,27 @@ class StepResult:
 
 class UAVEnvironment:
     def __init__(self, dynamics: DynamicsBackend, renderer: RendererBackend,
-                 geometry: GeometryBackend, dt=0.1, camera: CameraSpec | None = None):
+                 geometry: GeometryBackend, dt=0.1, camera: CameraSpec | None = None,
+                 observation_spec: ObservationSpec | None = None, sensors: SensorSuite | None = None):
         self.dynamics, self.renderer, self.geometry = dynamics, renderer, geometry
         self.dt = float(dt); self.camera = camera or CameraSpec()
+        self.observation_spec = observation_spec or ObservationSpec(cameras=(self.camera,))
+        self.sensors = sensors or SensorSuite(self.camera, self.observation_spec.modalities,
+                                              self.observation_spec.pose_visible)
         self.episode = None; self.steps = 0
 
     def reset(self, episode: EpisodeSpec):
         self.episode = episode; self.steps = 0
         self.dynamics.reset(UAVState(episode.start_pose))
         self.renderer.load_scene(episode.scene_id)
+        self.sensors.reset()
         return self.observe()
 
     def observe(self):
         if self.episode is None: raise RuntimeError("reset must be called before observe")
         state = self.dynamics.get_state()
-        rendered = self.renderer.render(self.camera, state.pose, ["rgb"])
-        obs = Observation(rgb={self.camera.name: rendered.rgb}, pose=None,
-                          instruction=self.episode.instruction, timestamp=state.timestamp,
-                          info={"step": self.steps, "scene_id": self.episode.scene_id})
-        return obs
+        return self.sensors.observe(self.renderer, state, self.episode.instruction,
+                                    state.timestamp, {"step": self.steps, "scene_id": self.episode.scene_id})
 
     def step(self, action: AgentAction):
         if self.episode is None: raise RuntimeError("reset must be called before step")

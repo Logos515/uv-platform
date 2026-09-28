@@ -9,6 +9,8 @@ class CameraSpec:
     width: int = 64
     height: int = 64
     fov_degrees: float = 90.0
+    position: tuple[float, float, float] = (0.0, 0.0, 0.0)
+    quaternion: tuple[float, float, float, float] = (0.0, 0.0, 0.0, 1.0)
 
     def __post_init__(self):
         if self.width <= 0 or self.height <= 0:
